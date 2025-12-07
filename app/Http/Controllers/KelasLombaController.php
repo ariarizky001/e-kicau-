@@ -81,16 +81,45 @@ class KelasLombaController extends Controller
 
     public function destroy(KelasLomba $kelasLomba)
     {
-        // Check if kelas has peserta
-        if ($kelasLomba->peserta()->count() > 0) {
+        // Check if kelas has peserta dengan nama_pemilik atau nama_burung yang terisi
+        $filledPeserta = $kelasLomba->peserta()
+            ->where(function($query) {
+                $query->whereNotNull('nama_pemilik')
+                      ->where('nama_pemilik', '<>', '')
+                      ->orWhereNotNull('nama_burung')
+                      ->where('nama_burung', '<>', '');
+            })
+            ->count();
+
+        if ($filledPeserta > 0) {
+            $message = 'Tidak dapat menghapus kelas lomba yang sudah memiliki peserta';
+
+            // If AJAX request, return JSON
+            if (request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $message
+                ], 422);
+            }
+
             return redirect()->route('kelas-lomba.index')
-                ->with('error', 'Tidak dapat menghapus kelas lomba yang sudah memiliki peserta');
+                ->with('error', $message);
         }
 
         $kelasLomba->delete();
 
+        $message = 'Kelas lomba berhasil dihapus';
+
+        // If AJAX request, return JSON
+        if (request()->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message
+            ]);
+        }
+
         return redirect()->route('kelas-lomba.index')
-            ->with('success', 'Kelas lomba berhasil dihapus');
+            ->with('success', $message);
     }
 
     /**
