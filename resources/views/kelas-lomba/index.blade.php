@@ -134,13 +134,9 @@
                                     <a href="{{ route('kelas-lomba.edit', $kelas->id) }}" class="btn btn-sm btn-warning" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form action="{{ route('kelas-lomba.destroy', $kelas->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus kelas lomba ini?');">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Hapus">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-sm btn-danger delete-kelas-btn" data-kelas-id="{{ $kelas->id }}" data-kelas-name="{{ $kelas->nama_kelas }}" title="Hapus">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </td>
                             </tr>
                         @empty
@@ -407,6 +403,51 @@
             meta.content = '{{ csrf_token() }}';
             document.head.appendChild(meta);
         }
+
+        // Handle delete kelas button
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.delete-kelas-btn')) {
+                const btn = e.target.closest('.delete-kelas-btn');
+                const kelasId = btn.getAttribute('data-kelas-id');
+                const kelasName = btn.getAttribute('data-kelas-name');
+
+                if (confirm(`Apakah Anda yakin ingin menghapus kelas lomba "${kelasName}"?`)) {
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+                    // Show loading
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                    btn.disabled = true;
+
+                    fetch(`/kelas-lomba/${kelasId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showSuccessAlert(data.message || 'Kelas lomba berhasil dihapus');
+                            setTimeout(() => {
+                                location.reload();
+                            }, 1000);
+                        } else {
+                            throw new Error(data.message || 'Gagal menghapus kelas lomba');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                        alert('Error: ' + error.message);
+                    });
+                }
+            }
+        });
     </script>
 @endsection
 

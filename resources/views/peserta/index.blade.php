@@ -229,9 +229,10 @@ function updateGantanganAJAX(pesertaId, gantanganBaru, button, csrfToken, kelasI
             button.setAttribute('data-current-gantangan', gantanganBaru);
             button.textContent = gantanganBaru;
 
-            // Reload peserta list
-            console.log('Reloading peserta list');
+            // Reload both list view dan grid view
+            console.log('Reloading peserta list and grid');
             loadPeserta(kelasId, '');
+            loadGridData(kelasId);
         } else {
             throw new Error(data.message || 'Gagal mengubah gantangan');
         }
@@ -545,10 +546,11 @@ function deletePeserta(pesertaId, csrfToken) {
     })
     .then(data => {
         console.log('Peserta deleted successfully:', data);
-        // Reload peserta list
+        // Reload peserta list and grid
         const kelasId = kelasSelect.value;
         if (kelasId) {
             loadPeserta(kelasId, searchInput.value);
+            loadGridData(kelasId);
         }
         // Show success message
         alert(data.message || 'Peserta berhasil dihapus');
@@ -668,15 +670,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         button.innerHTML = originalHtml;
                         button.disabled = false;
 
-                        // Reload grid to refresh with latest data from database
+                        // Always reload both grid and list view
                         const kelasId = kelasSelect.value;
-                        if (kelasId && gridContainer.style.display !== 'none') {
+                        if (kelasId) {
                             console.log('Reloading grid after save...');
                             loadGridData(kelasId);
-                        }
-
-                        // Refresh peserta list only if it's currently displayed
-                        if (kelasId && pesertaCard.style.display !== 'none') {
                             console.log('Refreshing peserta list after save...');
                             loadPeserta(kelasId, searchInput.value);
                         }
@@ -763,15 +761,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         button.innerHTML = originalHtml;
                         button.disabled = false;
 
-                        // Reload grid to refresh with latest data from database
+                        // Always reload both grid and list view
                         const kelasId = kelasSelect.value;
-                        if (kelasId && gridContainer.style.display !== 'none') {
+                        if (kelasId) {
                             console.log('Reloading grid after delete...');
                             loadGridData(kelasId);
-                        }
-
-                        // Refresh peserta list only if it's currently displayed
-                        if (kelasId && pesertaCard.style.display !== 'none') {
                             console.log('Refreshing peserta list after delete...');
                             loadPeserta(kelasId, searchInput.value);
                         }
@@ -890,10 +884,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Enter' && e.target.closest('.inlinePesertaForm')) {
             e.preventDefault();
             e.stopPropagation();
-            
+
             const form = e.target.closest('.inlinePesertaForm');
             const submitBtn = form.querySelector('.submitInlineForm');
-            
+
             if (submitBtn) {
                 submitInlineForm(submitBtn);
             }
@@ -993,10 +987,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     setTimeout(() => {
                         submitBtn.innerHTML = originalHtml;
                         submitBtn.disabled = false;
-                        console.log('Reloading peserta data...');
-                        // Reload peserta list
+                        console.log('Reloading peserta data and grid...');
+                        // Reload peserta list and grid
                         const searchTerm = document.getElementById('searchInput')?.value || '';
                         loadPeserta(kelasId, searchTerm);
+                        loadGridData(kelasId);
                     }, 1500);
                 } else {
                     throw new Error(data.message || 'Gagal menambahkan peserta');

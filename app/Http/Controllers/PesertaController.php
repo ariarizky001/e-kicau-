@@ -305,28 +305,30 @@ class PesertaController extends Controller
         $validated = $request->validate($rules);
 
         try {
-            // Collect data that will be saved
-            // IMPORTANT: Keep nomor_urut same as slot number to maintain grid structure
-            $pesertaData = [];
+            // Collect data - ONLY from slots that have at least nama_pemilik or nama_burung filled
+            $pesertaDataToSave = [];
+            $filledSlots = [];
 
             foreach ($validated['slots'] ?? [] as $slot => $item) {
-                // Save ALL slots, but fill with empty if not provided
-                $pesertaData[] = [
-                    'kelas_lomba_id' => $kelasLomba->id,
-                    'nomor_urut' => (int)$slot,  // Keep slot number as nomor_urut
-                    'nama_pemilik' => trim($item['nama_pemilik'] ?? ''),
-                    'nama_burung' => trim($item['nama_burung'] ?? ''),
-                    'alamat_team' => trim($item['alamat_team'] ?? ''),
-                    'nomor_gantangan' => trim($item['nomor_gantangan'] ?? $slot),
-                ];
+                $namaPemilik = trim($item['nama_pemilik'] ?? '');
+                $namaBurung = trim($item['nama_burung'] ?? '');
+
+                // Only save if slot has data
+                if ($namaPemilik || $namaBurung) {
+                    $pesertaDataToSave[] = [
+                        'kelas_lomba_id' => $kelasLomba->id,
+                        'nomor_urut' => (int)$slot,
+                        'nama_pemilik' => $namaPemilik,
+                        'nama_burung' => $namaBurung,
+                        'alamat_team' => trim($item['alamat_team'] ?? ''),
+                        'nomor_gantangan' => trim($item['nomor_gantangan'] ?? $slot),
+                    ];
+                    $filledSlots[] = (int)$slot;
+                }
             }
 
             // Validate duplicate nomor_gantangan only for filled slots
-            $filledSlots = array_filter($pesertaData, function($p) {
-                return !empty($p['nama_pemilik']) || !empty($p['nama_burung']);
-            });
-
-            $nomor_gantangan_list = array_column($filledSlots, 'nomor_gantangan');
+            $nomor_gantangan_list = array_column($pesertaDataToSave, 'nomor_gantangan');
             $nomor_gantangan_list = array_filter($nomor_gantangan_list);
 
             if (count($nomor_gantangan_list) !== count(array_unique($nomor_gantangan_list))) {
@@ -339,7 +341,7 @@ class PesertaController extends Controller
             }
 
             // Validate duplicate nama_burung within the same kelas (only for filled slots)
-            $nama_burung_list = array_column($filledSlots, 'nama_burung');
+            $nama_burung_list = array_column($pesertaDataToSave, 'nama_burung');
             $nama_burung_list = array_filter($nama_burung_list);
 
             if (count($nama_burung_list) !== count(array_unique($nama_burung_list))) {
@@ -351,20 +353,16 @@ class PesertaController extends Controller
                 return back()->with('error', $message);
             }
 
-            // Delete existing peserta for this kelas
+            // Delete ALL empty rows (placeholder) yang tidak terisi dari database
+            // untuk kelas ini, dan simpan hanya slot yang terisi
             Peserta::where('kelas_lomba_id', $kelasLomba->id)->delete();
 
-            // Reset auto increment untuk table peserta jika semua data sudah kosong
-            $totalPesertaRemaining = Peserta::count();
-            if ($totalPesertaRemaining == 0) {
-                // Reset auto increment ke 1
-                DB::statement('ALTER TABLE peserta AUTO_INCREMENT = 1');
-            }
-
-            // Insert all slots (including empty ones to maintain grid structure)
-            $totalInserted = count($filledSlots);  // Count only filled slots for message
-            foreach ($pesertaData as $data) {
+            // Insert ONLY filled slots
+            $totalInserted = 0;
+            foreach ($pesertaDataToSave as $data) {
                 Peserta::create($data);
+                $totalInserted++;
+                Log::info("Created peserta at slot {$data['nomor_urut']}", $data);
             }
 
             $successMessage = "Grid peserta berhasil disimpan! ($totalInserted peserta terdaftar)";
@@ -679,10 +677,25 @@ class PesertaController extends Controller
             return response()->json(['success' => false, 'message' => "Nomor gantangan harus antara 1 dan $totalSlots"], 422);
         }
 
-        // Check if gantangan already used by another peserta
-        $existingGantangan = Peserta::where('kelas_lomba_id', $kelasId)
+        // Jika gantangan sama dengan yang sekarang, tidak perlu update
+        if ($gantanganBaru == $peserta->nomor_gantangan) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Nomor gantangan sudah sama',
+                'peserta' => [
+                    'id' => $peserta->id,
+                    'nomor_urut' => $peserta->nomor_urut,
+                    'nomor_gantangan' => $peserta->nomor_gantangan,
+                    'nama_pemilik' => $peserta->nama_pemilik,
+                    'nama_burung' => $peserta->nama_burung
+                ]
+            ]);
+        }
+
+        // Check if slot (nomor_urut) already occupied by another peserta dengan data terisi
+        $existingAtSlot = Peserta::where('kelas_lomba_id', $kelasId)
             ->where('id', '!=', $peserta->id)
-            ->where('nomor_gantangan', $gantanganBaru)
+            ->where('nomor_urut', $gantanganBaru)
             ->where(function($q) {
                 // Hanya check peserta yang terisi
                 $q->where(DB::raw("TRIM(COALESCE(nama_pemilik, ''))"), '<>', '')
@@ -690,33 +703,22 @@ class PesertaController extends Controller
             })
             ->first();
 
-        if ($existingGantangan) {
-            Log::warning("Slot $gantanganBaru already occupied", ['occupied_by' => $existingGantangan->id]);
-            return response()->json([
-                'success' => false,
-                'message' => "Nomor gantangan $gantanganBaru sudah digunakan peserta lain"
-            ], 422);
-        }
-
-        // Check if slot (nomor_urut) already occupied by another peserta
-        $existingAtSlot = Peserta::where('kelas_lomba_id', $kelasId)
-            ->where('id', '!=', $peserta->id)
-            ->where('nomor_urut', $gantanganBaru)
-            ->first();
-
         if ($existingAtSlot) {
             // Jika ada peserta lain di slot tujuan, kita swap posisinya
             Log::info("Slot $gantanganBaru occupied by peserta {$existingAtSlot->id}, akan di-swap");
 
-            // Swap nomor_urut
-            $existingAtSlot->update(['nomor_urut' => $nomorUrutLama]);
+            // Swap: peserta yang di slot tujuan pindah ke slot peserta saat ini
+            $existingAtSlot->update([
+                'nomor_urut' => $nomorUrutLama,
+                'nomor_gantangan' => $nomorUrutLama
+            ]);
             Log::info("Peserta {$existingAtSlot->id} moved to slot $nomorUrutLama");
         }
 
-        // Update gantangan dan nomor_urut peserta yang di-move
+        // Update peserta: pindah ke slot baru (nomor_urut dan nomor_gantangan sama)
         $peserta->update([
             'nomor_gantangan' => $gantanganBaru,
-            'nomor_urut' => $gantanganBaru  // Auto-reorder: nomor_urut = gantangan baru
+            'nomor_urut' => $gantanganBaru
         ]);
 
         $peserta->refresh();
@@ -727,7 +729,7 @@ class PesertaController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Nomor gantangan berhasil diubah dan otomatis masuk ke urutan ' . $gantanganBaru,
+            'message' => 'Nomor gantangan berhasil diubah ke posisi ' . $gantanganBaru,
             'peserta' => [
                 'id' => $peserta->id,
                 'nomor_urut' => $peserta->nomor_urut,
@@ -736,6 +738,4 @@ class PesertaController extends Controller
                 'nama_burung' => $peserta->nama_burung
             ]
         ]);
-    }
-
-}
+    }}

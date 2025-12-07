@@ -40,22 +40,6 @@ class UserSeeder extends Seeder
             ]);
             $this->command->info('Admin created successfully!');
         }
-
-        // Create sample kelas lomba
-        if (!KelasLomba::exists()) {
-            for ($i = 1; $i <= 5; $i++) {
-                KelasLomba::create([
-                    'nomor_kelas' => $i,
-                    'nama_kelas' => 'Kelas ' . chr(64 + $i),
-                    'status' => 'aktif',
-                    'batas_peserta' => 16,
-                ]);
-            }
-            $this->command->info('Sample kelas lomba created successfully!');
-        } else {
-            $this->command->warn('Kelas lomba already exists!');
-        }
-
         $this->command->newLine();
         $this->command->info('=== Login Credentials ===');
         $this->command->info('Super Admin:');
